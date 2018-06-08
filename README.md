@@ -29,8 +29,11 @@ where :
 
 The ".new" file extention can be disabled by not specifying a suffix, but it's usefull for "in place" certificate renewal requests, to prevent old keys from beeing overwritten by the new private keys while waiting for the signed CERT.pem...
 
- 
 See the script help for more guidance.
+
+### Altnames notice
+
+when asking for altnames, the host FQDN will be automatically added as 1st altname as this is not handleded automatically by the CA.
 
 ### Requirements
 
