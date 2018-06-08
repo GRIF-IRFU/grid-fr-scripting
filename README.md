@@ -1,7 +1,7 @@
 # grid-fr-scripting
 GRID-FR related tool(s) used to request and renew grid-fr certificates
 
-###How this works
+### How this works
 
 The script requires some (personal and institutional) data and then sends requests the GRID-FR CA cgis (the CA is using opentrust).
 
@@ -32,16 +32,16 @@ The ".new" file extention can be disabled by not specifying a suffix, but it's u
  
 See the script help for more guidance.
 
-###Requirements
+### Requirements
 
 This script requires usual wget/grep/gawk tools, but in addition it requires __xml_grep__ for basic xml parsing using xpath. If you find a better way to parse the search cgi output... send a PR ;)
 
-###Contribution
+### Contribution
 
 Contributions are welcome : fork, fix/enhance, send PRs...
 
 Support requests and bugs may be submitted, they will be fixed on a best effort basis
 
-###Legal notice
+### Legal notice
 This repository contents is provided "as is" under the Cecill 2.1 licence.
 In no way shall we be held responsible of any damage done to you nor anyone/anything by your use of our scripts, blah blah blah
