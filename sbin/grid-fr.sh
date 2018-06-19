@@ -90,8 +90,8 @@ Options :
     your choice...
 
 Example :
-$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -o CEA -u IRFU -p ~/temp/ req node.domain
-$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -o CEA -u IRFU -p ~/temp/ retrieve node.domain
+$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -O CEA -U IRFU -r -p ~/temp/ req node.domain
+$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -O CEA -U IRFU -r -p ~/temp/ retrieve node.domain
 
 EOF
 }
