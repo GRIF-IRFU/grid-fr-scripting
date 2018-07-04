@@ -27,6 +27,7 @@ PROG_NAME=`basename $0`
 DEBUG=0
 VERBOSE=0
 SUBDIR=0
+NODE_ALTNAME_DEFINE=1 # define FQDN as 1st DNS altname. Same as previous CA, different default from new CA.
 SUFFIX=""
 RUNAS=`id -un`
 DRYRUN=1
@@ -39,8 +40,6 @@ Helper tool that allows for easier GRID-FR certificate management.
 
 When asking for a new certificate, a CSR will be created using openssl and then sent to the CA.
 The private key will be already locally generated, only will remain the task of retrieving the public key when the CA validates the request
-
-TODO: add alt subject in the requests.
 
 Usage : $PROG_NAME -t <TELEPHONE NUMBER> -p <PATH FOR CERTS DIR> -e email@org ACTION NODE ALT_DNS1 ALT_DNS2 ... ALT_DNS30
 
@@ -79,6 +78,10 @@ Options :
                 still waiting for the pending cert. Default suffix : empty (include the dot if you want one)
 
   -d        : debug (will not submit new requests nor renewal requests)
+
+  -D        : "special" case : the new CA does not add the FQDN as alternative name 1 (DNS: x509v3 altnames ).
+              This script DEFAULT to requesting the FQDN as altname#1
+              If this option is used, the script will NOT add FQDN as first requested altname !
 
   -v        : turn on verbose mode
   -s        : turn on subdir mode : a subdir named after the cert FQDN will be created and all files created in there. Otherwide, those will be stored in \$CERTSPATH
@@ -272,7 +275,7 @@ function cert_retrieve {
 
 # MAIN
 
-while getopts "t:p:c:k:e:f:u:m:O:U:drvhs" options; do
+while getopts "t:p:c:k:e:f:u:m:O:U:dDrvhs" options; do
   case $options in
     t ) TELEPHONE=$OPTARG;;
     p ) CERTSPATH=$OPTARG;;
@@ -289,6 +292,7 @@ while getopts "t:p:c:k:e:f:u:m:O:U:drvhs" options; do
     d)
        DEBUG=1
        VERBOSE=2 ;;
+    D) NODE_ALTNAME_DEFINE=0 ;;
     r) DRYRUN=0 ;;
     h)
       help
@@ -313,14 +317,30 @@ for i in "ACTION" "NODE" "CA_O" "CA_OU" "EMAIL" "TELEPHONE" "CONTACT_EMAIL"; do
   [ -z " ${!i}" ] && help && fail "$i cannot be empty" 2
 done
 
+#only run intermediate commands (cert request generation for instance) if either -r is selected, or debug is on
+# (and run them when -r or -d is selected)
+RUN_CMD=0
+if [[ $DRYRUN -eq 0 || $DEBUG -eq 1 ]]; then
+  RUN_CMD=1
+fi
+
+
 #process alternative names (max : 30)
-# don't shift 2 the args : the node name must also be used as an alt name in case alt names are given.
-shift 1
+# don't always "shift 2" the remaining args ("command" & "node name") : the node name must also be used as an alt name in case that's requested with -D
+if [ $NODE_ALTNAME_DEFINE -eq 1 ]; then
+  #keep FQDN as 1st altname
+  shift 1
+else
+  shift 2
+fi
 NODE_ALT_NAMES=( "$@" )
-#if the number of alt names is 1 (or 0), then no alt name was provided : empty the ALT_NAME var
-if [ ${#NODE_ALT_NAMES[*]} -le 1 ] ; then
+
+#if the number of alt names is 0, then no alt name was provided : empty the ALT_NAME var
+#probably useless check.
+if [ ${#NODE_ALT_NAMES[*]} -eq 0 ] ; then
   NODE_ALT_NAMES=()
 fi
+
 
 #validate mandatory tools used by this script
 CAN_RUN=1
@@ -339,31 +359,35 @@ for i in $NODE ; do
   [ $DNS_RET -ne 0 ] && fail "$NODE does not seem to resolve DNS as $i : <<host $i>> returned $DNS_RET" 2
 done
 
-#create a directory where the node files will be stored
-if [ $SUBDIR -eq 1 ]; then
-  NODE_DIR="$CERTSPATH/$NODE"
+if [ $RUN_CMD -eq 1 ] ; then
+
+  #create a directory where the node files will be stored
+  if [ $SUBDIR -eq 1 ]; then
+    NODE_DIR="$CERTSPATH/$NODE"
+  else
+    NODE_DIR="$CERTSPATH"
+  fi
+  mkdir -p $NODE_DIR && chown $RUNAS $NODE_DIR || fail "Could not create certificates destination directory $NODE_DIR" 2
+
+  #prepare the url basic commands
+  # cURL does not seem to contain ciphers with the CA. We must use wget with no pass :'( ??
+
+  # TODO : use GNU expect or something similar to remove the need for pass-less CERT key ?
+  # read -s -p 'Please enter YOUR USER key password :' PASS && echo
+
+
+  [ ! -d $CA_DIR ] && fail "Cannot access the directory where the CA certs are stored - this is mandatory for validating the host certs." 2
+  #CURL_CMD="curl -s $CURL_DEBUG -k --cert $CERT:$PASS --key $KEY" #curl issue with grid-fr CA website : no common ciphers :/
+  WGET_CMD="wget -q --ca-directory=$CA_DIR --certificate $CERT --private-key $KEY"
+  NOW="`date +%s`"
+
+  case "$ACTION" in
+    req)       cert_request  ;;
+    renew)     cert_renew    ;;
+    retrieve)  cert_retrieve ;;
+    *) help ;;
+  esac
 else
-  NODE_DIR="$CERTSPATH"
+  log "INFO: would run action $ACTION for $NODE if option -r was used without -d" 0
 fi
-mkdir -p $NODE_DIR && chown $RUNAS $NODE_DIR || fail "Could not create certificates destination directory $NODE_DIR" 2
-
-#prepare the url basic commands
-# cURL does not seem to contain ciphers with the CA. We must use wget with no pass :'( ??
-
-# TODO : use GNU expect or something similar to remove the need for pass-less CERT key ?
-# read -s -p 'Please enter YOUR USER key password :' PASS && echo
-
-
-[ ! -d $CA_DIR ] && fail "Cannot access the directory where the CA certs are stored - this is mandatory for validating the host certs." 2
-#CURL_CMD="curl -s $CURL_DEBUG -k --cert $CERT:$PASS --key $KEY" #curl issue with grid-fr CA website : no common ciphers :/
-WGET_CMD="wget -q --ca-directory=$CA_DIR --certificate $CERT --private-key $KEY"
-NOW="`date +%s`"
-
-case "$ACTION" in
-  req)       cert_request  ;;
-  renew)     cert_renew    ;;
-  retrieve)  cert_retrieve ;;
-  *) help ;;
-esac
-
 exit 0
