@@ -147,7 +147,7 @@ function log (){
 
 function fail (){
     [[ -z "$1" || -z "$2" ]] && { echo "fail function : need \$1 and \$2 to be non empty" ; exit 2 ; }
-    [ $2 > 0 ] && { echo "$1" ; exit $2 ; } || { echo "fail function : need \$2 to be >= 0" ; exit 2 ; }
+    [ $2 -gt 0 ] && { echo "$1" ; exit $2 ; } || { echo "fail function : need \$2 to be >= 0" ; exit 2 ; }
 }
 
 function cert_request {
