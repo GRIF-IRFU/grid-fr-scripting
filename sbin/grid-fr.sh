@@ -145,9 +145,9 @@ function log (){
 }
 
 
-function fail (){
-    [[ -z "$1" || -z "$2" ]] && { echo "fail function : need \$1 and \$2 to be non empty" ; exit 2 ; }
-    [ $2 -gt 0 ] && { echo "$1" ; exit $2 ; } || { echo "fail function : need \$2 to be >= 0" ; exit 2 ; }
+function finish (){
+    [[ -z "$1" || -z "$2" ]] && { echo "finish function : need \$1 and \$2 to be non empty" ; exit 2 ; }
+    [ $2 -ge 0 ] && { echo "$1" ; exit $2 ; } || { echo "finish function : need \$2 to be >= 0" ; exit 2 ; }
 }
 
 function cert_request {
@@ -159,7 +159,7 @@ function cert_request {
   SUBJECT="/O=GRID-FR/C=FR/O=${CA_O}/OU=${CA_OU}/CN=${NODE}"
   log "generating CSR request" 1
   log "  using openssl cmd : $CSR_CMD $SUBJECT" 2
-  $CSR_CMD $SUBJECT && chown $RUNAS $FILE_CSR || fail "Error when creating $NODE CSR request .. ?" 2
+  $CSR_CMD $SUBJECT && chown $RUNAS $FILE_CSR || finish "Error when creating $NODE CSR request .. ?" 2
 
   #if command was successfull, make sure key file is protected :
   chmod 600 $FILE_KEY
@@ -190,7 +190,7 @@ function cert_request {
 
   REQ_CMD="$WGET_CMD -O $FILE_CSR_RESULT --post-data \"$POST_DATA\" \"$CSR_URL\""
   if [ $DRYRUN -eq 0 ] ; then
-    eval "$REQ_CMD" && chown $RUNAS $FILE_CSR_RESULT || fail  "cert_request: failed to send CSR request for $NODE at $CSR_URL" 2
+    eval "$REQ_CMD" && chown $RUNAS $FILE_CSR_RESULT || finish  "cert_request: failed to send CSR request for $NODE at $CSR_URL" 2
 
     #search for this in the resulting html :
     # <div class="successMessage">The certificate request has been submitted.<br/>When it has been approved by a lifecycle administrator, you will receive an email with instructions about how to retrieve your certificate.</div>
@@ -228,7 +228,7 @@ function cert_retrieve {
   SEARCH_CMD="$WGET_CMD -O $NODE_DIR/$NODE.xml --post-data \"$POST_DATA\" \"$SEARCH_URL\""
   log "searching for $NODE pubkeys on the CA..." 1
   log "  using this cmd : $SEARCH_CMD" 2
-  eval "$SEARCH_CMD" && chown $RUNAS $NODE_DIR/$NODE.xml || fail  "cert_retrieve: failed to search for $NODE at $SEARCH_URL" 2
+  eval "$SEARCH_CMD" && chown $RUNAS $NODE_DIR/$NODE.xml || finish  "cert_retrieve: failed to search for $NODE at $SEARCH_URL" 2
 
   #search the node serial number in the list of retrieved entries using xpath/xstlproc
   # NOT SURE this will only a 1 element list !!
@@ -255,7 +255,7 @@ function cert_retrieve {
       OUT_FILE="$NODE_DIR/${NODE}.${SERIAL}.pem"
       POST_DATA="ca=AC_GRID_FR_Services&format=PEM&serial=$SERIAL"
       RETRIEVE_CMD="$WGET_CMD -O $OUT_FILE --post-data \"$POST_DATA\" \"$DOWNLOAD_URL\""
-      eval "$RETRIEVE_CMD" && chown $RUNAS $OUT_FILE || fail  "cert_retrieve: failed to retrieve $NODE PEM cert at $DOWNLOAD_URL" 2
+      eval "$RETRIEVE_CMD" && chown $RUNAS $OUT_FILE || finish  "cert_retrieve: failed to retrieve $NODE PEM cert at $DOWNLOAD_URL" 2
       if [ $IS_LATEST -eq 1 ]; then
         IS_LATEST=0
         FINAL_PEM="$NODE_DIR/${NODE}.pem$SUFFIX"
@@ -267,9 +267,9 @@ function cert_retrieve {
   done
 
   if [ $FOUND_CERTS -gt 0 ]; then
-    fail "$NODE : ok - downloaded $FOUND_CERTS pubkeys" 0
+    finish "$NODE : ok - downloaded $FOUND_CERTS pubkeys" 0
   else
-    fail "$NODE : warn - downloaded NO pubkeys ??" 1
+    finish "$NODE : warn - downloaded NO pubkeys ??" 1
   fi
 }
 
@@ -314,7 +314,7 @@ NODE="${2}"
 
 #check mandatory args
 for i in "ACTION" "NODE" "CA_O" "CA_OU" "EMAIL" "TELEPHONE" "CONTACT_EMAIL"; do
-  [ -z " ${!i}" ] && help && fail "$i cannot be empty" 2
+  [ -z " ${!i}" ] && help && finish "$i cannot be empty" 2
 done
 
 #only run intermediate commands (cert request generation for instance) if either -r is selected, or debug is on
@@ -356,7 +356,7 @@ done
 for i in $NODE ; do
   host $i >/dev/null 2>&1
   DNS_RET=$?
-  [ $DNS_RET -ne 0 ] && fail "$NODE does not seem to resolve DNS as $i : <<host $i>> returned $DNS_RET" 2
+  [ $DNS_RET -ne 0 ] && finish "$NODE does not seem to resolve DNS as $i : <<host $i>> returned $DNS_RET" 2
 done
 
 if [ $RUN_CMD -eq 1 ] ; then
@@ -367,7 +367,7 @@ if [ $RUN_CMD -eq 1 ] ; then
   else
     NODE_DIR="$CERTSPATH"
   fi
-  mkdir -p $NODE_DIR && chown $RUNAS $NODE_DIR || fail "Could not create certificates destination directory $NODE_DIR" 2
+  mkdir -p $NODE_DIR && chown $RUNAS $NODE_DIR || finish "Could not create certificates destination directory $NODE_DIR" 2
 
   #prepare the url basic commands
   # cURL does not seem to contain ciphers with the CA. We must use wget with no pass :'( ??
@@ -376,7 +376,7 @@ if [ $RUN_CMD -eq 1 ] ; then
   # read -s -p 'Please enter YOUR USER key password :' PASS && echo
 
 
-  [ ! -d $CA_DIR ] && fail "Cannot access the directory where the CA certs are stored - this is mandatory for validating the host certs." 2
+  [ ! -d $CA_DIR ] && finish "Cannot access the directory where the CA certs are stored - this is mandatory for validating the host certs." 2
   #CURL_CMD="curl -s $CURL_DEBUG -k --cert $CERT:$PASS --key $KEY" #curl issue with grid-fr CA website : no common ciphers :/
   WGET_CMD="wget -q --ca-directory=$CA_DIR --certificate $CERT --private-key $KEY"
   NOW="`date +%s`"
