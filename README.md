@@ -31,6 +31,11 @@ The ".new" file extention can be disabled by not specifying a suffix, but it's u
 
 See the script help for more guidance.
 
+### User/Admin defaults :
+
+Defaults can be specified either in `/etc/default/GRIDFR` or using the env variable `GRIDFR_DEFAULTS` to give another defaults file.
+
+
 ### Altnames notice
 
 when asking for altnames, the host FQDN will be automatically added as 1st altname as this is not handleded automatically by the CA.
