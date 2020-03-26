@@ -49,7 +49,7 @@ Where :
     - renew    : request a certificate renewal
     - retrieve : retrieve a certificate public key from the CA
 
-    NODE : is the hostname which for which the certificate is required
+    NODE : is the hostname which for which the certificate is required. For a service cert , format is <service_name>/NODE
 
     ALT_DNS1 .. ALT_DNS30 : are the host alternative subjects that are requested. Up to 30 can be requested.
 
@@ -92,10 +92,12 @@ Options :
     openssl DOES work, BUT does not allow (?) to pass the password and will prompt for it each time IF you set a passphrase on your key file.
     your choice...
 
-Example :
-$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -O CEA -U IRFU -r -p ~/temp/ req node.domain
-$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -O CEA -U IRFU -r -p ~/temp/ retrieve node.domain
+Example (add -r to really run) :
+$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -O CEA -U IRFU -p ~/temp/ req node.domain
+$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -O CEA -U IRFU -p ~/temp/ retrieve node.domain
 
+For a service cert :
+$PROG_NAME -v -k ~/.globus/userkey.nop.pem -t _MY_PHONE -e frederic.schaer___@_###?cea.fr -f mylab-admin@mylab.fr -O CEA -U IRFU -p . req svc1/node.domain
 EOF
 }
 
@@ -151,12 +153,17 @@ function finish (){
 }
 
 function cert_request {
-  FILE_CSR="$NODE_DIR/$NODE.$NOW.csr"
-  FILE_KEY="$NODE_DIR/$NODE.$NOW.key"
-  FILE_PENDING="$NODE_DIR/$NODE.pending"
+  FILE_CSR="$NODE_DIR/$NODE_FILE.$NOW.csr"
+  FILE_KEY="$NODE_DIR/$NODE_FILE.$NOW.key"
+  FILE_PENDING="$NODE_DIR/$NODE_FILE.pending"
   FILE_CSR_RESULT="$NODE_DIR/cert_request.`date +%s`.result.html"
   CSR_CMD="openssl req -new -newkey rsa:2048 -nodes -out $FILE_CSR -keyout $FILE_KEY -subj"
-  SUBJECT="/O=GRID-FR/C=FR/O=${CA_O}/OU=${CA_OU}/CN=${NODE}"
+  #WARNING : for service certs (CN = "service/fqdn"), the '/' char must be transformed into \/ for openssl to work
+  # otherwise, an error is returned :
+  # req: Hit end of string before finding the equals.
+  # or
+  # end of string encountered while processing type of subject name element #5
+  SUBJECT="/O=GRID-FR/C=FR/O=${CA_O}/OU=${CA_OU}/CN=${NODE//\//\\/}"
   log "generating CSR request" 1
   log "  using openssl cmd : $CSR_CMD $SUBJECT" 2
   $CSR_CMD $SUBJECT && chown $RUNAS $FILE_CSR || finish "Error when creating $NODE CSR request .. ?" 2
@@ -175,14 +182,14 @@ function cert_request {
   POST_DATA="${POST_DATA}&unique_id="`rawurlencode "mail=$EMAIL,ou=$CA_OU,o=$CA_O,o=GRID-FR"`
   POST_DATA="${POST_DATA}&pkcsten1="`rawurlencode "$CSR_DATA"`
   POST_DATA="${POST_DATA}&pkcs10=1"
-  POST_DATA="${POST_DATA}&commonName1=$NODE"
+  POST_DATA="${POST_DATA}&commonName1=`rawurlencode $NODE`"
   POST_DATA="${POST_DATA}&contactEmail1="`rawurlencode "$CONTACT_EMAIL"`
   POST_DATA="${POST_DATA}&comments="
   POST_DATA="${POST_DATA}&profile_form=1"
 
 
   for i in `seq 1 30`; do
-    POST_DATA="${POST_DATA}&subjectAltNameDNS$i=${NODE_ALT_NAMES[i-1]}"
+    POST_DATA="${POST_DATA}&subjectAltNameDNS$i=`rawurlencode ${NODE_ALT_NAMES[i-1]}`"
   done
 
   #we're done : post our cert request :
@@ -190,6 +197,7 @@ function cert_request {
 
   REQ_CMD="$WGET_CMD -O $FILE_CSR_RESULT --post-data \"$POST_DATA\" \"$CSR_URL\""
   if [ $DRYRUN -eq 0 ] ; then
+    log "CSR request command : $REQ_CMD" 2
     eval "$REQ_CMD" && chown $RUNAS $FILE_CSR_RESULT || finish  "cert_request: failed to send CSR request for $NODE at $CSR_URL" 2
 
     #search for this in the resulting html :
@@ -197,7 +205,7 @@ function cert_request {
     if grep -q "The certificate request has been submitted" $FILE_CSR_RESULT ; then
       echo "cert_request for $NODE succeeded."
       [ $DEBUG -eq 0 ] && rm -f $FILE_CSR_RESULT $FILE_CSR || log "debug is ON : not removing temporary and result files" 2
-      DEST_KEY="$NODE_DIR/$NODE.key$SUFFIX"
+      DEST_KEY="$NODE_DIR/$NODE_FILE.key$SUFFIX"
       log "copying new key to non-timestamped file $DEST_KEY .." 1
       cp $FILE_KEY $DEST_KEY && chown $RUNAS $DEST_KEY
       chmod 600 $DEST_KEY
@@ -225,10 +233,10 @@ function cert_retrieve {
   SEARCH_URL="${CA_URL}/${CGI_SEARCH}"
   POST_DATA="${CGI_SEARCH_OPTS}&subject=${NODE}"
   #the request must be authenticated using a valid user cert. If not, the resulting xml will be "empty" (no "entry" node)
-  SEARCH_CMD="$WGET_CMD -O $NODE_DIR/$NODE.xml --post-data \"$POST_DATA\" \"$SEARCH_URL\""
+  SEARCH_CMD="$WGET_CMD -O $NODE_DIR/$NODE_FILE.xml --post-data \"$POST_DATA\" \"$SEARCH_URL\""
   log "searching for $NODE pubkeys on the CA..." 1
   log "  using this cmd : $SEARCH_CMD" 2
-  eval "$SEARCH_CMD" && chown $RUNAS $NODE_DIR/$NODE.xml || finish  "cert_retrieve: failed to search for $NODE at $SEARCH_URL" 2
+  eval "$SEARCH_CMD" && chown $RUNAS $NODE_DIR/$NODE_FILE.xml || finish  "cert_retrieve: failed to search for $NODE at $SEARCH_URL" 2
 
   #search the node serial number in the list of retrieved entries using xpath/xstlproc
   # NOT SURE this will only a 1 element list !!
@@ -238,9 +246,9 @@ function cert_retrieve {
   #
   # output format : serial:enddate(epoch)
   log "  extracting the certs serial and enddate as epoch from the xml..." 2
-  OUT=`xml_grep --text_only '//value[@i18n="Serial Number" or @i18n="Valid to"]' $NODE_DIR/$NODE.xml | gawk '{if( FNR % 2) {printf "%s;",$0} else { cmd="date +%s -d \""$0"\"" ; cmd | getline var ;print var ; close(cmd) } }'`
+  OUT=`xml_grep --text_only '//value[@i18n="Serial Number" or @i18n="Valid to"]' $NODE_DIR/$NODE_FILE.xml | gawk '{if( FNR % 2) {printf "%s;",$0} else { cmd="date +%s -d \""$0"\"" ; cmd | getline var ;print var ; close(cmd) } }'`
 
-  #sort by enddate (reverse order) : the CERT with the biggest (epoch) enddate will 'win' and see its output file named as "$NODE.pem"
+  #sort by enddate (reverse order) : the CERT with the biggest (epoch) enddate will 'win' and see its output file named as "$NODE_FILE.pem"
   SORTED_CERT_LIST=$(echo "$OUT" | sort -t ';' -k '2' -r -n)
   IS_LATEST=1
 
@@ -252,13 +260,13 @@ function cert_retrieve {
     ENDDATE=${i/*;/}
     FOUND_CERTS=$[ FOUND_CERTS + 1 ]
     if [ $ENDDATE -gt $NOW ]; then
-      OUT_FILE="$NODE_DIR/${NODE}.${SERIAL}.pem"
+      OUT_FILE="$NODE_DIR/${NODE_FILE}.${SERIAL}.pem"
       POST_DATA="ca=AC_GRID_FR_Services&format=PEM&serial=$SERIAL"
       RETRIEVE_CMD="$WGET_CMD -O $OUT_FILE --post-data \"$POST_DATA\" \"$DOWNLOAD_URL\""
       eval "$RETRIEVE_CMD" && chown $RUNAS $OUT_FILE || finish  "cert_retrieve: failed to retrieve $NODE PEM cert at $DOWNLOAD_URL" 2
       if [ $IS_LATEST -eq 1 ]; then
         IS_LATEST=0
-        FINAL_PEM="$NODE_DIR/${NODE}.pem$SUFFIX"
+        FINAL_PEM="$NODE_DIR/${NODE_FILE}.pem$SUFFIX"
         cp $OUT_FILE $FINAL_PEM && chown $RUNAS $FINAL_PEM
       fi
     else
@@ -314,8 +322,22 @@ NODE="${2}"
 
 #check mandatory args
 for i in "ACTION" "NODE" "CA_O" "CA_OU" "EMAIL" "TELEPHONE" "CONTACT_EMAIL"; do
-  [ -z " ${!i}" ] && help && finish "$i cannot be empty" 2
+  [ -z "${!i}" ] && help && finish "$i cannot be empty" 2
 done
+
+#handle service certificates
+if [[ "$NODE" =~ .*/.* ]]; then
+  NODE_NAME=${NODE/*\//}
+  NODE_SERVICENAME=${NODE/\/*/}
+  NODE_FILE=${NODE_SERVICENAME}@${NODE_NAME}
+else
+  NODE_NAME=$NODE
+  NODE_SERVICENAME=$NODE
+  NODE_FILE=$NODE
+fi
+log "node name      : $NODE_NAME" 2
+log "node svc name  : $NODE_SERVICENAME" 2
+log "node file name : $NODE_FILE" 2
 
 #only run intermediate commands (cert request generation for instance) if either -r is selected, or debug is on
 # (and run them when -r or -d is selected)
@@ -353,17 +375,17 @@ done
 #check the node resolves in the DNS : this is mandatory for this CA
 #check NODE name in DNS. Do the altnames need to resolve in DNS ??
 #for i in $NODE ${NODE_ALT_NAMES[*]} ; do
-for i in $NODE ; do
+for i in $NODE_NAME ; do
   host $i >/dev/null 2>&1
   DNS_RET=$?
-  [ $DNS_RET -ne 0 ] && finish "$NODE does not seem to resolve DNS as $i : <<host $i>> returned $DNS_RET" 2
+  [ $DNS_RET -ne 0 ] && finish "$NODE_NAME does not seem to resolve DNS as $i : <<host $i>> returned $DNS_RET" 2
 done
 
 if [ $RUN_CMD -eq 1 ] ; then
 
   #create a directory where the node files will be stored
   if [ $SUBDIR -eq 1 ]; then
-    NODE_DIR="$CERTSPATH/$NODE"
+    NODE_DIR="$CERTSPATH/$NODE_NAME"
   else
     NODE_DIR="$CERTSPATH"
   fi
@@ -376,7 +398,7 @@ if [ $RUN_CMD -eq 1 ] ; then
   # read -s -p 'Please enter YOUR USER key password :' PASS && echo
 
 
-  [ ! -d $CA_DIR ] && finish "Cannot access the directory where the CA certs are stored - this is mandatory for validating the host certs." 2
+  [ ! -d $CA_DIR ] && finish "Cannot access the directory where the CA certs ($CA_DIR) are stored - this is mandatory for validating the host certs." 2
   #CURL_CMD="curl -s $CURL_DEBUG -k --cert $CERT:$PASS --key $KEY" #curl issue with grid-fr CA website : no common ciphers :/
   WGET_CMD="wget -q --ca-directory=$CA_DIR --certificate $CERT --private-key $KEY"
   NOW="`date +%s`"
