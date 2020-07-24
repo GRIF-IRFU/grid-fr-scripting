@@ -320,6 +320,10 @@ shift "$((OPTIND - 1))"
 ACTION="${1}"
 NODE="${2}"
 
+#check user cert validity :
+openssl x509 -in $CERT -noout -checkend 172800
+[ $? -eq 1 ] && finish "ERROR : certificate $CERT is either expired or will expire within 2 days. NOT using that." 2
+
 #check mandatory args
 for i in "ACTION" "NODE" "CA_O" "CA_OU" "EMAIL" "TELEPHONE" "CONTACT_EMAIL"; do
   [ -z "${!i}" ] && help && finish "$i cannot be empty" 2
